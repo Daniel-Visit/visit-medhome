@@ -37,3 +37,7 @@ next-env.d.ts
 
 # prisma
 /prisma/migrations
+
+# client and server node_modules
+client/node_modules/
+server/node_modules/
