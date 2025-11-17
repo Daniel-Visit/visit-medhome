@@ -1,0 +1,87 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  rut       String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  email     String   @unique @db.VarChar(150)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamp
+  updatedAt DateTime @updatedAt @db.Timestamp
+
+  visits    Visit[]
+  codes     LoginCode[]
+  checkins  VisitCheckin[]
+}
+
+model Visit {
+  id             Int      @id @default(autoincrement())
+  professional   User     @relation(fields: [professionalId], references: [id])
+  professionalId Int
+
+  patientName    String   @db.VarChar(150)
+  address        String   @db.VarChar(255)
+  lat            Decimal  @db.Decimal(9, 6)
+  lng            Decimal  @db.Decimal(9, 6)
+
+  scheduledStart DateTime @db.Timestamp
+  scheduledEnd   DateTime @db.Timestamp
+  status         VisitStatus @default(PENDING)
+
+  createdAt      DateTime @default(now()) @db.Timestamp
+  updatedAt      DateTime @updatedAt @db.Timestamp
+
+  checkins       VisitCheckin[]
+
+  @@index([professionalId])
+  @@index([scheduledStart])
+}
+
+model LoginCode {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+
+  codeHash  String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @db.Timestamp
+  expiresAt DateTime @db.Timestamp
+  used      Boolean  @default(false)
+  usedAt    DateTime? @db.Timestamp
+
+  @@index([userId])
+}
+
+model VisitCheckin {
+  id              Int      @id @default(autoincrement())
+  visit           Visit    @relation(fields: [visitId], references: [id])
+  visitId         Int
+
+  professional    User     @relation(fields: [professionalId], references: [id])
+  professionalId  Int
+
+  checkinTime     DateTime @default(now()) @db.Timestamp
+  lat             Decimal  @db.Decimal(9, 6)
+  lng             Decimal  @db.Decimal(9, 6)
+  distanceMeters  Int
+  isValidTime     Boolean
+  isValidRadius   Boolean
+
+  createdAt       DateTime @default(now()) @db.Timestamp
+
+  @@index([visitId])
+  @@index([professionalId])
+}
+
+enum VisitStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+}
+
