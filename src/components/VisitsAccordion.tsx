@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, ChevronLeft, ArrowBigRightDash, RefreshCw, CalendarX, Calendar } from "lucide-react";
+import { ChevronRight, ChevronLeft, ArrowBigRightDash, RefreshCw, CalendarX, Calendar, AlertTriangle } from "lucide-react";
 import { distanceInMeters } from "@/lib/haversine";
 
 type Visit = {
@@ -52,7 +52,6 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
       userLng?: number;
     }
   >>({});
-  
   const hasLoadedInitial = useRef(false);
 
   // Función para manejar errores de autenticación
@@ -126,22 +125,73 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
   };
 
   const requestUserLocation = async (visitId: number) => {
+    // Log inicial con información del navegador
+    const userAgent = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+    const isAndroid = /Android/i.test(userAgent);
+    const isMobile = isIOS || isAndroid;
+    const isChrome = /Chrome|CriOS/i.test(userAgent) && !/Edg|OPR|FxiOS/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS|FxiOS/i.test(userAgent);
+    const isSecure = window.location.protocol === 'https:';
+    const hostname = window.location.hostname;
+
     if (!navigator.geolocation) {
-      setLocationError("Tu navegador no soporta geolocalización.");
+      const errorMsg = "Tu navegador no soporta geolocalización.";
+      setLocationError(errorMsg);
       return;
+    }
+
+    // Verificar si el permiso ya está bloqueado ANTES de intentar
+    let permissionAlreadyDenied = false;
+    if ('permissions' in navigator) {
+      try {
+        const permCheck = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+        if (permCheck.state === 'denied') {
+          permissionAlreadyDenied = true;
+        }
+      } catch (e) {
+        // Ignorar errores de verificación
+      }
     }
 
     setRequestingLocation(prev => new Set(prev).add(visitId));
     setLocationError(null);
+    
+    // Si ya está bloqueado, mostrar mensaje específico y no intentar
+    if (permissionAlreadyDenied) {
+      let errorMsg: string;
+      if (isIOS && isChrome) {
+        errorMsg = "El permiso de geolocalización está bloqueado.\n\nPara desbloquearlo en Chrome:\n1. Toca el ícono de candado o ubicación en la barra de direcciones\n2. Selecciona 'Permitir' o 'Allow' para Ubicación\n\nO ve a:\nConfiguración > Chrome > Permisos del sitio > Ubicación";
+      } else if (isIOS && isSafari) {
+        errorMsg = "El permiso de geolocalización está bloqueado.\n\nPara desbloquearlo en Safari:\n1. Toca el botón 'aA' en la barra de direcciones\n2. Selecciona 'Configuración del sitio web'\n3. Toca 'Ubicación' y selecciona 'Permitir'\n\nO ve a:\nConfiguración > Safari > Configuración avanzada > Datos del sitio web > Ubicación";
+      } else if (isMobile) {
+        errorMsg = "El permiso de geolocalización está bloqueado.\n\nPara desbloquearlo:\n1. Toca el ícono de candado o ubicación en la barra de direcciones\n2. Selecciona 'Permitir' o 'Allow' para Ubicación\n\nO ve a:\nConfiguración del navegador > Permisos > Ubicación";
+      } else {
+        errorMsg = "El permiso de geolocalización está bloqueado. Por favor, haz clic en el ícono de candado en la barra de direcciones y permite el acceso a la ubicación.";
+      }
+      
+      setLocationError(errorMsg);
+      setRequestingLocation(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(visitId);
+        return newSet;
+      });
+      return;
+    }
 
+    const startTime = Date.now();
+    
     // En iOS Safari, la solicitud debe hacerse directamente sin verificar permisos primero
     // La verificación previa puede bloquear el diálogo nativo
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLocation({
+        const elapsed = Date.now() - startTime;
+        const location = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-        });
+        };
+        
+        setUserLocation(location);
         setLocationError(null);
         setRequestingLocation(prev => {
           const newSet = new Set(prev);
@@ -151,13 +201,16 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
       },
       (error) => {
         let errorMessage = "No se pudo obtener tu ubicación.";
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            if (isIOS) {
-              errorMessage = "Permiso de geolocalización denegado.\n\nPara habilitarlo en iOS:\n1. Toca el botón 'aA' en la barra de direcciones de Safari\n2. Selecciona 'Configuración del sitio web'\n3. Toca 'Ubicación' y selecciona 'Permitir'\n\nO ve a:\nConfiguración > Safari > Configuración avanzada > Datos del sitio web > Ubicación";
+            // Detectar navegador específico para el mensaje de error
+            const currentUserAgent = navigator.userAgent;
+            const currentIsIOS = /iPhone|iPad|iPod/i.test(currentUserAgent);
+            const currentIsChrome = /Chrome|CriOS/i.test(currentUserAgent) && !/Edg|OPR|FxiOS/i.test(currentUserAgent);
+            const currentIsSafari = /Safari/i.test(currentUserAgent) && !/Chrome|CriOS|FxiOS/i.test(currentUserAgent);
+            
+            if (currentIsIOS && currentIsChrome) {
+              errorMessage = "Permiso de geolocalización denegado.\n\nPara habilitarlo en Chrome:\n1. Toca el ícono de candado o ubicación en la barra de direcciones\n2. Selecciona 'Permitir' o 'Allow' para Ubicación\n\nO ve a:\nConfiguración > Chrome > Permisos del sitio > Ubicación";
+            } else if (currentIsIOS && currentIsSafari) {
+              errorMessage = "Permiso de geolocalización denegado.\n\nPara habilitarlo en Safari:\n1. Toca el botón 'aA' en la barra de direcciones\n2. Selecciona 'Configuración del sitio web'\n3. Toca 'Ubicación' y selecciona 'Permitir'\n\nO ve a:\nConfiguración > Safari > Configuración avanzada > Datos del sitio web > Ubicación";
             } else if (isMobile) {
               errorMessage = "Permiso de geolocalización denegado.\n\nPara habilitarlo:\n1. Toca el ícono de ubicación en la barra de direcciones\n2. O ve a Configuración > Privacidad > Ubicación y habilita el acceso para este sitio";
             } else {
@@ -169,6 +222,8 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
             break;
           case error.TIMEOUT:
             errorMessage = "Tiempo de espera agotado al obtener la ubicación. Por favor, intenta nuevamente.";
+            break;
+          default:
             break;
         }
         setLocationError(errorMessage);
@@ -211,15 +266,17 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
     setCheckinStatus({
       [visit.id]: { loading: true },
     });
-
+    
     try {
+      const requestBody = { lat: userLocation.lat, lng: userLocation.lng };
+
       const response = await fetch(`/api/visits/${visit.id}/checkin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({ lat: userLocation.lat, lng: userLocation.lng }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.status === 401) {
@@ -228,6 +285,7 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
       }
 
       const data = await response.json();
+
       setCheckinStatus({
         [visit.id]: {
           ...data,
@@ -658,35 +716,65 @@ export default function VisitsAccordion({ visits: initialVisits, userName, initi
                       </div>
 
                       {/* Mensajes de solicitud de ubicación */}
-                      {!userLocation && !locationError && !requestingLocation.has(visit.id) && (
-                        <div className="p-2.5 rounded-lg bg-[#eff6ff] border border-[#bfdbfe]">
-                          <div className="text-[11px] text-[#1e40af] mb-2">
-                            Para validar tu asistencia, necesitamos conocer tu ubicación actual.
-                          </div>
+                      {!userLocation && !requestingLocation.has(visit.id) && (
+                        <div className={`p-2.5 rounded-lg border ${locationError ? 'bg-[#fef3c2] border-[#fbbf24]' : 'bg-[#eff6ff] border-[#bfdbfe]'}`}>
+                          {locationError ? (
+                            <>
+                              <div className="text-[11px] text-[#92400e] mb-2 font-semibold flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                Permiso bloqueado
+                              </div>
+                              <div className="text-[10px] text-[#78350f] mb-2 whitespace-pre-line">
+                                {locationError}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-[11px] text-[#1e40af] mb-2">
+                              Para validar tu asistencia, necesitamos conocer tu ubicación actual.
+                            </div>
+                          )}
                           <button
-                            onClick={() => requestUserLocation(visit.id)}
-                            className="w-full py-1.5 px-3 rounded-lg bg-[#3b82f6] text-white text-[11px] font-medium hover:bg-[#2563eb] transition-colors"
+                            onClick={() => {
+                              // Limpiar error antes de intentar de nuevo
+                              setLocationError(null);
+                              requestUserLocation(visit.id);
+                            }}
+                            className={`w-full py-1.5 px-3 rounded-lg text-white text-[11px] font-medium transition-colors ${
+                              locationError 
+                                ? 'bg-[#f59e0b] hover:bg-[#d97706]' 
+                                : 'bg-[#3b82f6] hover:bg-[#2563eb]'
+                            }`}
                           >
-                            Compartir mi ubicación
+                            {locationError ? 'Intentar de nuevo' : 'Compartir mi ubicación'}
                           </button>
                         </div>
                       )}
                       {requestingLocation.has(visit.id) && (
-                        <div className="text-[10px] text-[#6b7280] text-center py-2">
-                          Solicitando ubicación...
-                        </div>
-                      )}
-                      {locationError && (
-                        <div className="p-2.5 rounded-lg bg-[#fef2f2] border border-[#fecaca]">
-                          <div className="text-[11px] text-[#991b1b] mb-2 whitespace-pre-line">
-                            {locationError}
+                        <div className="p-3 rounded-lg bg-[#fef3c2] border-2 border-[#fbbf24]">
+                          <div className="text-[12px] font-semibold text-[#92400e] mb-2 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4" />
+                            IMPORTANTE: Esperando tu respuesta
                           </div>
-                          <button
-                            onClick={() => requestUserLocation(visit.id)}
-                            className="w-full py-1.5 px-3 rounded-lg bg-[#dc2626] text-white text-[11px] font-medium hover:bg-[#b91c1c] transition-colors"
-                          >
-                            Intentar nuevamente
-                          </button>
+                          <div className="text-[11px] text-[#78350f] space-y-1.5">
+                            <div><strong>Busca el diálogo de permiso</strong> en tu pantalla:</div>
+                            <div className="pl-4">• Parte superior o inferior de la pantalla</div>
+                            <div className="pl-4">• O en la barra de direcciones del navegador</div>
+                            <div className="pl-4">• Puede aparecer como un banner o popup</div>
+                            <div className="mt-2 pt-2 border-t border-[#fbbf24]">
+                              <div className="font-semibold text-[#92400e]">Haz clic en "Permitir" o "Allow"</div>
+                              <div className="text-[#991b1b] font-semibold">NO hagas clic en "Denegar" o "Deny"</div>
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-[#fbbf24] text-[10px] text-[#78350f]">
+                              <div className="font-semibold mb-1 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                Si NO aparece ningún diálogo:
+                              </div>
+                              <div className="pl-2">1. Revisa la barra de direcciones (ícono de candado o ubicación)</div>
+                              <div className="pl-2">2. Toca el ícono y selecciona "Permitir" o "Allow"</div>
+                              <div className="pl-2">3. O ve a Configuración del navegador > Permisos > Ubicación</div>
+                              <div className="pl-2">4. Permite manualmente para este sitio</div>
+                            </div>
+                          </div>
                         </div>
                       )}
 
